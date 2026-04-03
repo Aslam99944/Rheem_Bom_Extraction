@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOM Extractor — Intelligent Document Processing</title>
+    <meta name="description" content="Extract Bill of Materials data from engineering drawings using AI-powered document analysis">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Background effects -->
+    <div class="bg-grid"></div>
+    <div class="glow glow-1"></div>
+    <div class="glow glow-2"></div>
+    <div class="glow glow-3"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header" id="header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1>BOM Extractor</h1>
+                    <p class="header-sub">AI-Powered Intelligent Document Processing</p>
+                </div>
+            </div>
+            <div class="header-badges">
+                <span class="badge badge-ocr">📄 Document AI</span>
+                <span class="badge badge-vlm">🧠 Smart Extract</span>
+                <span class="badge badge-gpt4o">✨ Production Ready</span>
+            </div>
+        </header>
+
+        <!-- Pipeline Visual -->
+        <div class="pipeline-strip">
+            <div class="pipeline-step" id="step1">
+                <span class="step-num">1</span>
+                <span>Upload PDF/Image</span>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step" id="step2">
+                <span class="step-num">2</span>
+                <span>Document Analysis</span>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step" id="step3">
+                <span class="step-num">3</span>
+                <span>Intelligent Extraction</span>
+            </div>
+            <div class="pipeline-arrow">→</div>
+            <div class="pipeline-step" id="step4">
+                <span class="step-num">4</span>
+                <span>Excel Export</span>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <section class="card upload-section" id="uploadSection">
+            <div class="card-header">
+                <h2>📄 Upload BOM Document</h2>
+                <p class="card-subtitle">Supports PDF, PNG, JPG, TIFF files</p>
+            </div>
+            <div class="drop-zone" id="dropZone">
+                <div class="drop-zone-content">
+                    <div class="upload-icon-wrapper">
+                        <svg class="upload-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                    </div>
+                    <p class="drop-text">Drag & drop your BOM file here</p>
+                    <p class="drop-subtext">or click to browse</p>
+                    <div class="file-types">PDF · PNG · JPG · TIFF</div>
+                </div>
+                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif" hidden>
+            </div>
+            <div class="file-info" id="fileInfo" style="display:none;">
+                <div class="file-name-row">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                        <polyline points="13 2 13 9 20 9"/>
+                    </svg>
+                    <span id="fileName"></span>
+                    <span id="fileSize" class="file-size"></span>
+                    <button class="btn-remove" id="removeFile" title="Remove file">✕</button>
+                </div>
+            </div>
+            <button class="btn-primary" id="extractBtn" disabled>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                Extract BOM Data
+            </button>
+        </section>
+
+        <!-- Loading State -->
+        <section class="card loading-section" id="loadingSection" style="display:none;">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+                <p class="loading-text">Processing your BOM document...</p>
+                <div class="loading-steps">
+                    <div class="loading-step active" id="ls1">📄 Analyzing document layout and tables...</div>
+                    <div class="loading-step" id="ls2">🧠 Extracting and mapping BOM fields...</div>
+                    <div class="loading-step" id="ls3">📊 Generating Excel report...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Results Section -->
+        <section class="results-section" id="resultsSection" style="display:none;">
+
+            <!-- Metrics Row -->
+            <div class="card metrics-card">
+                <div class="card-header">
+                    <h2>📊 Token Usage & Performance</h2>
+                </div>
+                <div class="metrics-grid">
+                    <div class="metric">
+                        <div class="metric-icon">📥</div>
+                        <span class="metric-value" id="inputTokens">—</span>
+                        <span class="metric-label">Input Tokens</span>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-icon">📤</div>
+                        <span class="metric-value" id="outputTokens">—</span>
+                        <span class="metric-label">Output Tokens</span>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-icon">Σ</div>
+                        <span class="metric-value" id="totalTokens">—</span>
+                        <span class="metric-label">Total Tokens</span>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-icon">💰</div>
+                        <span class="metric-value" id="estCost">—</span>
+                        <span class="metric-label">Est. Cost</span>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-icon">📋</div>
+                        <span class="metric-value" id="rowCount">—</span>
+                        <span class="metric-label">Rows Extracted</span>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-icon">⏱️</div>
+                        <span class="metric-value" id="procTime">—</span>
+                        <span class="metric-label">Processing Time</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OCR Text Preview -->
+            <div class="card ocr-card">
+                <div class="card-header">
+                    <h2>📄 Extracted Structured Text</h2>
+                    <button class="btn-toggle" id="toggleOcr">Show</button>
+                </div>
+                <pre class="ocr-text" id="ocrText" style="display:none;"></pre>
+            </div>
+
+            <!-- BOM Table -->
+            <div class="card table-card">
+                <div class="card-header">
+                    <h2>📋 Extracted BOM Data</h2>
+                    <button class="btn-secondary" id="downloadBtn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Download Excel
+                    </button>
+                </div>
+                <div class="table-wrapper">
+                    <table id="bomTable">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Part Number</th>
+                                <th>Manufacturer</th>
+                                <th>Description</th>
+                                <th>Qty</th>
+                                <th>UOM</th>
+                                <th>Commodity</th>
+                                <th>Type</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bomTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Benefits -->
+            <div class="card benefits-card">
+                <div class="card-header">
+                    <h2>🚀 Why This Solution?</h2>
+                </div>
+                <div class="benefits-grid">
+                    <div class="benefit">
+                        <div class="benefit-icon">📄</div>
+                        <h3>Native Table Understanding</h3>
+                        <p>AI reads tables directly from PDFs — row/column structure, headers, and cell values with near-perfect accuracy.</p>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon">🧠</div>
+                        <h3>Intelligent Field Mapping</h3>
+                        <p>Automatically maps extracted text to BOM schema — inferring commodity types, UOM, and manufacturer names.</p>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon">🎯</div>
+                        <h3>High Accuracy</h3>
+                        <p>Production-grade extraction eliminates phantom rows, misread part numbers, and conflicting data sources.</p>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon">📐</div>
+                        <h3>Structured Output</h3>
+                        <p>Guaranteed consistent, typed JSON output with standardized fields — no manual post-processing required.</p>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon">⚡</div>
+                        <h3>Cost Efficient</h3>
+                        <p>Optimized text-only pipeline uses minimal resources per extraction — designed for enterprise-scale throughput.</p>
+                    </div>
+                    <div class="benefit">
+                        <div class="benefit-icon">📋</div>
+                        <h3>Multi-Format Support</h3>
+                        <p>Handles multi-page PDFs, wire harness drawings, tolerance tables, and diverse engineering document layouts.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Upload -->
+            <button class="btn-primary btn-new" id="newUploadBtn">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Upload Another BOM
+            </button>
+        </section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
