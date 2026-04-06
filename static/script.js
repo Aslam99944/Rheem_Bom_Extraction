@@ -57,13 +57,13 @@ function animateLoadingSteps() {
 
     setTimeout(() => {
         ls1.className = 'loading-step done';
-        ls1.textContent = '✅ Document analysis complete';
+        ls1.textContent = '✅ Document analysis and page conversion complete';
         ls2.className = 'loading-step active';
     }, 3000);
 
     setTimeout(() => {
         ls2.className = 'loading-step done';
-        ls2.textContent = '✅ BOM field extraction complete';
+        ls2.textContent = '✅ BOM extraction from text + images complete';
         ls3.className = 'loading-step active';
     }, 8000);
 }

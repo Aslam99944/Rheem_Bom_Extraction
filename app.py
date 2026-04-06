@@ -1,15 +1,17 @@
 """
-BOM Extraction POC — Production-Ready Pipeline
-Architecture: Azure Document Intelligence (Layout) + GPT-4o (Text-only LLM)
+BOM Extraction — Production-Ready Hybrid Pipeline
+Architecture: Azure Document Intelligence (Layout) + GPT-4o Vision (Text + Images)
 
 Flow:
-  1. PDF bytes → Azure Document Intelligence (prebuilt-layout)
-  2. Structured text (tables, paragraphs, notes) → GPT-4o (text-only, no images)
-  3. JSON BOM data → Validation & Dedup → Excel export
+  1. PDF bytes → Azure Document Intelligence (prebuilt-layout) → structured text
+  2. PDF bytes → PyMuPDF → page images (base64 PNG)
+  3. Structured text + page images → GPT-4o Vision → JSON BOM data
+  4. Validation & Dedup → Excel export
 """
 
 import os
 import io
+import base64
 import json
 import time
 import uuid
@@ -30,6 +32,7 @@ from azure.core.credentials import AzureKeyCredential
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+import fitz  # PyMuPDF — PDF to image conversion
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -115,6 +118,34 @@ def analyze_document(file_bytes: bytes, content_type: str) -> dict:
     logger.info(f"Azure DI: analyzed {len(result.pages)} page(s)")
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# PDF to Base64 images (for GPT-4o Vision)
+# ---------------------------------------------------------------------------
+
+def pdf_pages_to_base64(file_bytes: bytes, dpi: int = 200) -> list[str]:
+    """
+    Convert all pages of a PDF to base64-encoded PNG images.
+    Uses PyMuPDF (fitz) - no external dependencies like Poppler.
+    Returns a list of base64 strings, one per page.
+    """
+    images = []
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            zoom = dpi / 72
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat)
+            img_bytes = pix.tobytes("png")
+            b64 = base64.b64encode(img_bytes).decode("utf-8")
+            images.append(b64)
+            logger.info(f"Page {page_num + 1}: converted to image ({pix.width}x{pix.height})")
+        doc.close()
+    except Exception as e:
+        logger.warning(f"PDF to image conversion failed: {e}. Falling back to text-only.")
+    return images
 
 
 def build_structured_text(di_result) -> str:
@@ -219,8 +250,15 @@ def build_extraction_prompt(structured_text: str) -> str:
     """
     return f"""You are a Bill of Materials (BOM) extraction expert for industrial and engineering documents.
 
-You are given STRUCTURED TEXT extracted from a document by Azure Document Intelligence.
-Tables are already parsed with row/column structure. Text paragraphs include notes, callouts, and annotations.
+You are given TWO inputs:
+1. **STRUCTURED TEXT** extracted by Azure Document Intelligence — contains accurate table data, text content, and annotations.
+2. **PAGE IMAGES** of the actual document — use these to understand spatial layout, wire routing, dimensional annotations, and callout positions.
+
+USE BOTH INPUTS TOGETHER:
+- Use the TEXT for accurate part numbers, table cell values, and notes (text is more reliable for exact characters).
+- Use the IMAGES for spatial understanding — which dimensions belong to which wires, how wires are routed, which callout labels refer to which component.
+- If a value appears in text AND image, prefer the TEXT version (more accurate OCR).
+- If something is visible in the IMAGE but missing from TEXT, extract it from the image.
 
 ===== DOCUMENT CONTENT =====
 {structured_text}
@@ -236,9 +274,9 @@ Extract ALL BOM-relevant items from the document. Items come from:
 
 3. **ENGINEERING DRAWING CONTENT**: If NO formal BOM table exists, identify parts from callouts, labels, and annotations in the drawing.
    → Callout labels follow patterns like: "DESCRIPTION MFR P/N XXXXX" or "DESCRIPTION MFR XXXXX OR EQUIVALENT"
-     Example: "PLUG HOUSING AMP P/N 1-480763-0" → part_number="1-480763-0", manufacturer="AMP", description="Plug Housing"
-     Example: "SOCKET CONTACT AMP P/N 350537-1" → part_number="350537-1", manufacturer="AMP", description="Socket Contact"
-     Example: "RING TERMINAL AMP P/N 40595 OR EQUIVALENT" → part_number="40595", manufacturer="AMP", description="Ring Terminal"
+      Example: "PLUG HOUSING AMP P/N 1-480763-0" → part_number="1-480763-0", manufacturer="AMP", description="PLUG HOUSING"
+      Example: "SOCKET CONTACT AMP P/N 350537-1" → part_number="350537-1", manufacturer="AMP", description="SOCKET CONTACT"
+      Example: "RING TERMINAL AMP P/N 40595 OR EQUIVALENT" → part_number="40595", manufacturer="AMP", description="RING TERMINAL"
    → Wire labels in diagrams (e.g., '(BK) 19" BLACK', '(WH) 19" WHITE') are wire items. Capture EVERY instance even if they appear identical.
    → Wire LENGTHS come from dimensional annotations next to wires (e.g., '28 1/4"', '22 3/4"', '134"'). Extract these as the wire qty.
    → Part QUANTITIES come from annotations like "X REQ'D" (e.g., "6 REQ'D" means qty=6) or from counting instances in the diagram.
@@ -253,7 +291,11 @@ Extract ALL BOM-relevant items from the document. Items come from:
     - "OST" → "OST"
     - "MOLEX" → "Molex"
     - "TE" → "TE Connectivity"
-- "description": Copy exactly from the Description column. If it says "12 PIN", write "12-pin Connector". If it says "TERMINAL", write "Terminal".
+- "description": ALL DESCRIPTIONS MUST BE UPPERCASE. Copy from Description column and convert to uppercase.
+    Examples: "TWIST LOCK GROMMET", "GROMMET", "CABLE TIE", "RING TERMINAL", "12-PIN CONNECTOR"
+- Special rules:
+    - If a "cable tie" or "wire tie" item has a part number, extract the part number to the part_number field. The description stays as "CABLE TIE" or "WIRE TIE".
+    - If description mentions only "label" with label text, set description to "LABEL".
 - "qty": Copy from QTY column
 - "uom": "EA" for discrete parts
 - "commodity": "BOP" for purchased parts
@@ -269,12 +311,14 @@ For each unique wire from Wire Information / Circuit End tables:
 - "item": Number sequentially continuing from BOM table items
 - "part_number": LEAVE EMPTY. Do NOT use Terminal Part Numbers or Connector Part Numbers as the wire's part number. Those belong in notes.
 - "manufacturer": Leave empty for wires
-- "description": Use format "{{WIRE_SIZE}}AWG {{Full_Color_Name}}". Convert standard wire color codes to full names:
-    OG → Orange, YE → Yellow, BK → Black, RD → Red, GN → Green,
-    BU → Blue, WH → White, VT → Violet, GY → Gray, PK → Pink, BN → Brown
-    Example: "22AWG Orange", "18AWG Red", "18AWG Black"
+- "description": Use format "{{WIRE_SIZE}}AWG,{{FULL_COLOR_NAME}} WIRE" — ALL UPPERCASE, comma after AWG, "WIRE" at the end.
+    Convert standard wire color codes to full names:
+    OG → ORANGE, YE → YELLOW, BK → BLACK, RD → RED, GN → GREEN,
+    BU → BLUE, WH → WHITE, VT → VIOLET, GY → GRAY, PK → PINK, BN → BROWN
+    R/Y or RD/YE → RED/YELLOW, BK/Y or BK/YE → BLACK/YELLOW
+    Examples: "18AWG,RED WIRE", "10AWG,ORANGE WIRE", "20AWG,BLACK/YELLOW WIRE", "18AWG,RED/YELLOW WIRE"
 - **AGGREGATION**: If multiple rows in the wire table describe the SAME wire type (same gauge and color), aggregate them into a SINGLE BOM item and calculate the **TOTAL sum** of their lengths.
-    - Example: Row 1 = 18 R/Y 134", Row 2 = 18 R/Y 16". Output = One item, Description: "18AWG Red/Yellow", Qty: "150".
+    - Example: Row 1 = 18 R/Y 134", Row 2 = 18 R/Y 16". Output = One item, Description: "18AWG,RED/YELLOW WIRE", Qty: "150".
 - "qty": Total summed length for this wire type. If the document NOTES mention a wire length tolerance (e.g., "WIRE LENGTH TOLERANCE ± .250" or "TOLERANCE ON FINISHED CABLE LENGTHS..."), append it to the sum: e.g., "176\"±0.250\""
 - "uom": "Inch"
 - "commodity": "Make"
@@ -288,7 +332,7 @@ For each unique wire from Wire Information / Circuit End tables:
 - **Strict Cleaning**: Once a part number or manufacturer name (like "TE", "TE CONNECTIVITY", "MOLEX") has been extracted to its respective column, you MUST REMOVE IT from the "description" field.
     - Example Wrong: description="3X Female Quick Connect TE 3-520140-2", part_number="3-520140-2", manufacturer="TE Connectivity"
     - Example Correct: description="3X Female Quick Connect", part_number="3-520140-2", manufacturer="TE Connectivity"
-- The "description" column should ONLY contain the human-readable description of the component (e.g., "3X Female Quick Connect", "Ring Terminal", "Wire Ties").
+- The "description" column should ONLY contain the human-readable description of the component in UPPERCASE (e.g., "3X FEMALE QUICK CONNECT", "RING TERMINAL", "WIRE TIES").
 
 ===== DO NOT EXTRACT AS BOM ITEMS =====
 
@@ -396,6 +440,10 @@ def validate_bom_items(items: list[dict]) -> list[dict]:
         item["description"] = re.sub(r'\s*[:\-]\s*$', '', item["description"])
         item["description"] = " ".join(item["description"].split())
         desc = item["description"]
+
+        # Force all descriptions to UPPERCASE
+        item["description"] = item["description"].upper()
+        desc = item["description"]
         # Dedup key (description + qty) — skip for wires, they get summed later
         if item.get("type") != "Wire & Cable":
             dedup_key = (desc.lower(), item.get("qty", "").strip())
@@ -499,9 +547,34 @@ def extract_bom(file_bytes: bytes, content_type: str) -> dict:
 
     prompt = build_extraction_prompt(structured_text)
 
+    # --- Step 2b: Convert PDF pages to images ---
+    page_images = []
+    if content_type == "application/pdf":
+        page_images = pdf_pages_to_base64(file_bytes)
+        logger.info(f"Converted {len(page_images)} PDF pages to images for Vision")
+    else:
+        # For images (PNG/JPG/TIFF), encode the file directly
+        b64 = base64.b64encode(file_bytes).decode("utf-8")
+        page_images = [b64]
+        logger.info("Encoded uploaded image for Vision")
+
+    # --- Step 2c: Build GPT-4o Vision message ---
+    content_parts = [
+        {"type": "text", "text": prompt}
+    ]
+    for idx, img_b64 in enumerate(page_images):
+        mime = "image/png"
+        content_parts.append({
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{mime};base64,{img_b64}",
+                "detail": "high"
+            }
+        })
+
     response = openai_client.chat.completions.create(
         model=AZURE_OPENAI_DEPLOYMENT,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": content_parts}],
         temperature=0.0,
         max_tokens=8192,
         response_format={"type": "json_object"},

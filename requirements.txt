@@ -5,3 +5,4 @@ openai
 openpyxl
 python-multipart
 azure-ai-documentintelligence
+PyMuPDF
