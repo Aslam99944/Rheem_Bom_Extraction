@@ -1,19 +1,15 @@
-# BOM Extractor (Azure Document Intelligence + GPT-4o)
+# BOM Extractor (Hybrid Vision Pipeline)
 
-A production-ready web application that extracts Bill of Materials (BOM) data from PDF documents and images with industry-grade accuracy. It leverages **Azure Document Intelligence (Layout Model)** for native table understanding and **Azure OpenAI GPT-4o** for intelligent field mapping and data inference.
+A production-ready web application that extracts Bill of Materials (BOM) data from complex engineering documents with industry-grade accuracy. It leverages a **Hybrid Vision Pipeline** combining **Azure Document Intelligence** for structured data and **GPT-4o Vision** for spatial diagram understanding.
 
 ## Features
-- **File Support:** Upload PDF, PNG, JPG, and TIFF files.
-- **Azure Document Intelligence:** Native parsing of complex engineering tables, wire harness diagrams, and notes with high spatial accuracy.
-- **GPT-4o Intelligence:** 
-  - Dynamic mapping of structured text to BOM schema.
-  - Intelligent inference of Commodity, Type, and Unit of Measure (UOM).
-  - Handles wire color code mapping (e.g., OG → Orange).
-  - Integrates tolerances and alternate parts from drawing notes.
-- **Structured Output:** Guaranteed JSON schema via GPT-4o's `json_object` format.
-- **Standardized Excel Export:** Generates styled Excel files with drawing metadata (Drawing No, Name) and sorted BOM items.
-- **Token Metrics:** Real-time tracking of API usage and estimated costs.
-- **Modern UI:** Premium dark theme with glassmorphism and real-time pipeline visualization.
+- **Hybrid Extraction:** Processes both structured text (from Azure DI) and page images (from PyMuPDF) in a single unified AI model.
+- **Diagram Understanding:** Correctly assigns dimensions and callouts to wires and components based on their spatial orientation in diagrams.
+- **Automated Wire Summation:** Automatically sums lengths of identical wire types (same AWG and color) from both tables and diagram labels.
+- **Strict Formatting:** Standardized uppercase descriptions and specialized wire naming (e.g., `18AWG,RED WIRE`).
+- **Description Cleaning:** Automatically strips embedded part numbers and manufacturer names from descriptions into their respective columns.
+- **Standardized Excel Export:** Professional reports with drawing metadata headers and sorted/validated BOM items.
+- **Token Metrics:** Real-time tracking of API usage and estimated costs for both text and vision tokens.
 
 ---
 
@@ -23,26 +19,39 @@ A production-ready web application that extracts Bill of Materials (BOM) data fr
 
 | Library | Purpose |
 |---------|---------|
-| **[FastAPI](https://fastapi.tiangolo.com/)** | Async web framework for API endpoints |
-| **[azure-ai-documentintelligence](https://pypi.org/project/azure-ai-documentintelligence/)** | Azure SDK for layout and table extraction |
-| **[openai](https://github.com/openai/openai-python)** | SDK for Azure OpenAI GPT-4o extraction |
+| **[FastAPI](https://fastapi.tiangolo.com/)** | High-performance async web framework |
+| **[PyMuPDF (fitz)](https://pypi.org/project/PyMuPDF/)** | High-quality PDF-to-image conversion for Vision |
+| **[azure-ai-documentintelligence](https://pypi.org/project/azure-ai-documentintelligence/)** | Native parsing of layouts and tables |
+| **[openai](https://github.com/openai/openai-python)** | Unified interface for GPT-4o Vision |
 | **[openpyxl](https://openpyxl.readthedocs.io/)** | Professional Excel report generation |
-| **[python-dotenv](https://pypi.org/project/python-dotenv/)** | Environment variable management |
 
 ### Frontend
 
 | Technology | Purpose |
 |------------|---------|
-| **HTML5/CSS3** | Modern, responsive dark-mode UI |
-| **Vanilla JS** | Async upload and real-time status updates |
+| **HTML5/CSS3** | Premium dark-mode UI with glassmorphism |
+| **Vanilla JS** | Real-time pipeline visualization and async uploads |
 
 ---
 
-## Prerequisites
+## Technical Architecture
 
-### Azure Services
-1. **Azure Document Intelligence**: A resource in the Azure Portal (F0 Free tier or S0).
-2. **Azure OpenAI**: A resource with a **GPT-4o** deployment.
+The application uses a **Dual-Input Hybrid Pipeline**:
+
+1. **Azure DI Layout**: Extracts high-accuracy table cells, paragraphs, and annotations as structured text.
+2. **Page Conversion**: PyMuPDF converts every PDF page into a high-resolution PNG image at 200 DPI.
+3. **GPT-4o Vision**: Receives BOTH the text and the images. It uses text for character-perfect part numbers and images for spatial context (like wire routing).
+4. **Validation Engine**: Cleans, upcases, sums, and sorts the data before final export.
+
+---
+
+## Formatting Standards
+
+To ensure production consistency, the system enforces:
+- **Descriptions**: All component descriptions are converted to **UPPERCASE**.
+- **Wire Format**: `{AWG}AWG,{COLOR} WIRE` (e.g., `18AWG,RED WIRE`).
+- **Cleaning**: "TE", "Molex", or part numbers are automatically stripped from descriptions once extracted to their own columns.
+- **Labels**: General labels are standardized to simply `LABEL`.
 
 ---
 
@@ -50,12 +59,12 @@ A production-ready web application that extracts Bill of Materials (BOM) data fr
 
 ```
 BOM_Extraction_POC/
-├── app.py                  # Main Application (Azure DI + GPT-4o pipeline)
-├── static/                 # Frontend assets (HTML, CSS, JS)
-├── .env                    # Credentials and Config
-├── requirements.txt        # Python dependencies
-├── README.md               # This file
-├── uploads/                # Temporary storage for uploaded files
+├── app.py                  # Hybrid Pipeline (DI + Vision + Validation)
+├── static/                 # Frontend UI (index.html, style.css, script.js)
+├── .env                    # Azure & OpenAI Credentials
+├── requirements.txt        # Backend dependencies
+├── README.md               # Documentation
+├── uploads/                # Temporary PDF storage
 └── outputs/                # Generated Excel reports
 ```
 
@@ -93,25 +102,4 @@ AZURE_DI_KEY=...
 
 1. **Start Server**: `.venv\Scripts\python.exe app.py`
 2. **Access Web UI**: [http://localhost:8000](http://localhost:8000)
-
----
-
-## Extraction Workflow
-
-1. **Azure DI Layout**: Extracts raw text while preserving table structures and spatial headers.
-2. **GPT-4o Mapping**: A unified prompt processes the structured text to identify parts, wires, and metadata.
-3. **Validation**: Deduplication and sorting (1, 2, 3...) of extracted items.
-4. **Export**: Styled Excel with Drawing Number and Name in the header.
-
-### Extracted Fields
-
-| Field | Description |
-|-------|-------------|
-| Drawing No/Name | Extracted from the title block |
-| Item | Sorted line number |
-| Part Number | Extracted part codes (validated) |
-| Manufacturer | Standardized brand names |
-| Description | Human-readable part names |
-| Qty | Quantities with associated tolerances |
-| Commodity/Type | Inferred based on industry standards |
-| Notes | Connector mappings and alternate parts |
+3. **Process**: Upload an engineering drawing and watch the hybrid pipeline in action.
