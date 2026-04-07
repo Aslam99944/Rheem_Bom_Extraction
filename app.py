@@ -279,6 +279,11 @@ Extract ALL BOM-relevant items from the document. Items come from:
       Example: "RING TERMINAL AMP P/N 40595 OR EQUIVALENT" → part_number="40595", manufacturer="AMP", description="RING TERMINAL"
    → Wire labels in diagrams (e.g., '(BK) 19" BLACK', '(WH) 19" WHITE') are wire items. Capture EVERY instance even if they appear identical.
    → Wire LENGTHS come from dimensional annotations next to wires (e.g., '28 1/4"', '22 3/4"', '134"'). Extract these as the wire qty.
+   → **WIRE HARNESS ROUTING**: In wire harness diagrams, multiple dimensional annotations represent SEGMENTS of the total wire path. ALL wires that run through the harness pass through ALL segments. You MUST:
+     1. Identify ALL dimensional annotations in the diagram (e.g., 24.00, 18.00, 2.00 TYP).
+     2. Trace each wire's path from one end to the other, through MIDWAY points.
+     3. SUM all segment dimensions that each wire passes through to get the TOTAL wire length.
+     Example: Diagram shows 24.00 (top segment) and 18.00 (bottom segment). All 3 wires (BK, WH, RD) run through both → each wire qty = 24 + 18 = 42.00
    → Part QUANTITIES come from annotations like "X REQ'D" (e.g., "6 REQ'D" means qty=6) or from counting instances in the diagram.
    → If no quantity is explicitly stated for a discrete part, infer from context (pin count, connector size, etc.) or set qty="1".
 
