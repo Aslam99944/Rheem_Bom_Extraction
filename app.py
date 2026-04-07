@@ -280,10 +280,11 @@ Extract ALL BOM-relevant items from the document. Items come from:
    → Wire labels in diagrams (e.g., '(BK) 19" BLACK', '(WH) 19" WHITE') are wire items. Capture EVERY instance even if they appear identical.
    → Wire LENGTHS come from dimensional annotations next to wires (e.g., '28 1/4"', '22 3/4"', '134"'). Extract these as the wire qty.
    → **WIRE HARNESS ROUTING**: In wire harness diagrams, multiple dimensional annotations represent SEGMENTS of the total wire path. ALL wires that run through the harness pass through ALL segments. You MUST:
-     1. Identify ALL dimensional annotations in the diagram (e.g., 24.00, 18.00, 2.00 TYP).
+     1. Identify ALL MAIN dimensional annotations in the diagram (e.g., 24.00, 18.00).
      2. Trace each wire's path from one end to the other, through MIDWAY points.
-     3. SUM all segment dimensions that each wire passes through to get the TOTAL wire length.
-     Example: Diagram shows 24.00 (top segment) and 18.00 (bottom segment). All 3 wires (BK, WH, RD) run through both → each wire qty = 24 + 18 = 42.00
+     3. SUM only the MAIN segment dimensions that each wire passes through to get the TOTAL wire length.
+     4. **EXCLUDE "TYP" dimensions** (e.g., "2.00 TYP.", "1.50 TYP"). These are manufacturing instructions (breakout/strip lengths for crimping and soldering), NOT procurement lengths. Do NOT add them to the wire length.
+     Example: Diagram shows 24.00 (top segment), 18.00 (bottom segment), and 2.00 TYP (breakout). Wire qty = 24 + 18 = 42.00 (NOT 44.00, because 2.00 TYP is excluded).
    → Part QUANTITIES come from annotations like "X REQ'D" (e.g., "6 REQ'D" means qty=6) or from counting instances in the diagram.
    → If no quantity is explicitly stated for a discrete part, infer from context (pin count, connector size, etc.) or set qty="1".
 
@@ -291,7 +292,11 @@ Extract ALL BOM-relevant items from the document. Items come from:
 
 - Extract EVERY row from the BOM/Parts List table. Do NOT skip any row.
 - "item": Exactly as shown in the table's Item column
-- "part_number": Copy exactly from the Part Number column (e.g., "420C2PM12FL0", "430251200", "2-34146-1")
+- "part_number": Copy from the Part Number column. **IMPORTANT: Strip any manufacturer prefix from the part number.**
+    - If the source text says "TE 2-520102-2", the part_number is "2-520102-2" (NOT "TE 2-520102-2"). "TE" goes into manufacturer.
+    - If the source text says "AMP 350537-1", the part_number is "350537-1". "AMP" goes into manufacturer.
+    - If the source text says "MOLEX 430251200", the part_number is "430251200". "MOLEX" goes into manufacturer.
+    - The part_number field should ONLY contain the numeric/alphanumeric part code, NEVER a manufacturer name.
 - "manufacturer": Copy from MFR column. Use full name when recognizable:
     - "OST" → "OST"
     - "MOLEX" → "Molex"
@@ -404,6 +409,22 @@ def validate_bom_items(items: list[dict]) -> list[dict]:
         for key in item:
             if isinstance(item[key], str):
                 item[key] = " ".join(item[key].split()).strip()
+
+        # Strip manufacturer prefix from part_number (e.g., "TE 2-520102-2" → "2-520102-2")
+        part_num = str(item.get("part_number", "")).strip()
+        mfr_prefixes = ["TE CONNECTIVITY", "TE", "AMP", "MOLEX", "JST", "OST", "TYCO", "AMPHENOL"]
+        for prefix in mfr_prefixes:
+            if part_num.upper().startswith(prefix + " "):
+                stripped_pn = part_num[len(prefix):].strip()
+                # Only strip if there's still a part number left
+                if stripped_pn:
+                    # Set manufacturer if it's empty
+                    if not item.get("manufacturer", "").strip():
+                        item["manufacturer"] = prefix if prefix != "TE" else "TE Connectivity"
+                    item["part_number"] = stripped_pn
+                    logger.info(f"Stripped MFR prefix '{prefix}' from part_number: {part_num} → {stripped_pn}")
+                break
+        part_num = str(item.get("part_number", "")).strip()
 
         # Convert fractional qty to decimal (e.g., "28 1/4" → "28.25", "3/4" → "0.75")
         qty_val = str(item.get("qty", "")).strip()
